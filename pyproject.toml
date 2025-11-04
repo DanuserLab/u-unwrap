@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+ 
+ 
+[tool.setuptools]
+packages = ["unwrap2D"]
+ 
+ 
+#[tool.setuptools.packages.find]
+#where = ["."]  # list of folders that contain the packages (["."] by default)
+#include = ["segment3D"]  # package names should match these glob patterns (["*"] by default)
+#exclude = ['__pycache__', '__init__.py']  # exclude packages matching these glob patterns (empty by default)
+#namespaces = false  # to disable scanning PEP 420 namespaces (true by default)
+ 
+ 
+[project]
+name="u-Unwrap"
+description="Map 2D cellular shapes to disk, square and rectangle representations for analysis"
+authors = [{name='Felix Y. Zhou, Shiqiu Yu', email='felixzhou1@gmail.com'}]
+readme = "README.md"
+license={file = "LICENSE"}
+version = "0.1.0"
+classifiers = [
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS :: MacOS X",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12"
+]
+
+requires-python = ">=3.9, <3.13"
+dependencies = [
+    'u-Unwrap3D'
+    ]
+
+[project.urls]
+Homepage = "https://github.com/DanuserLab/u-unwrap"
+Issues = "https://github.com/DanuserLab/u-unwrap/issues"
+

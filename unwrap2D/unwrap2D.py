@@ -1,0 +1,903 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Tue Oct 18 12:15:36 2022
+
+@author: fyz11
+"""
+import numpy as np
+
+
+def make_checkerboard_img(imshape, grid=(10,10)):
+    
+    r""" generate a checkerboard montage of two 2D images, useful for checking misalignment when registering two images. 
+    
+    Parameters
+    ----------
+    imshape : (M,N) array
+        size of img grid
+    grid : (int,int) tuple
+        specifies the number of rows and number of columns in the gridding of the checkerboard. 
+
+    Returns
+    -------
+    checkerboard : (M,N) numpy array
+        the checkerboard image
+    """
+
+    import numpy as np
+    
+    rows, cols = imshape[:2]
+    
+    # create the checkerboard mask.
+    check_rows = np.linspace(0, rows, grid[0]+1).astype(np.int32)
+    check_cols = np.linspace(0, cols, grid[1]+1).astype(np.int32)
+    checkerboard = np.zeros((rows,cols))
+    
+    for i in range(grid[0]):
+        
+        if np.mod(i,2) == 0:
+            even = 0
+        else:
+            even = 1
+            
+        for j in range(grid[1]):
+            r = [check_rows[i], check_rows[i+1]]
+            c = [check_cols[j], check_cols[j+1]]
+            checkerboard[r[0]:r[1], c[0]:c[1]] = even 
+            
+            if even == 0:
+                even = 1
+            else:
+                even = 0
+                
+    return checkerboard
+
+
+def make_checkerboard_circle_img(radius, border_pad, n_theta=16, n_r=15):
+    """
+    n_r must be odd
+    """
+    import numpy as np 
+    
+    checkerboard = np.zeros((2*radius, 2*radius), dtype=np.int32)
+    
+    centroid = np.hstack(checkerboard.shape)/2.
+    yy,xx = np.indices(checkerboard.shape)
+    rr = np.sqrt((yy-centroid[0])**2+(xx-centroid[1])**2)
+    theta = np.arctan2(yy-centroid[0],xx-centroid[1])
+    
+    valid_mask = rr<=radius
+    
+    # use odd even. 
+    cnt = 0 
+    
+    thetas = np.linspace(-np.pi, np.pi, n_theta+1)
+    rs = np.linspace(0, radius, n_r + 1)
+    
+    for theta_ii in np.arange(n_theta):
+        mask_theta = np.logical_and(theta >= thetas[theta_ii], 
+                                    theta <= thetas[theta_ii+1])
+        for rr_ii in np.arange(n_r):    
+            mask_r = np.logical_and(rr >= rs[rr_ii], 
+                                    rr <= rs[rr_ii+1])
+            mask = np.logical_and(mask_theta , mask_r)
+            checkerboard[mask] = cnt + 1
+            cnt+=1
+            
+    evens = np.mod(checkerboard,2)==0
+    odds = np.mod(checkerboard,2)==1
+    
+    checkerboard[evens] = 1
+    checkerboard[odds] = 0
+    
+    checkerboard = np.pad(checkerboard*valid_mask, 
+                          pad_width=[[border_pad,border_pad], [border_pad, border_pad]])
+    
+    return checkerboard
+
+
+def uv_to_yx_pts2D(uv_pts2D, uv_xy_unwrap_params):
+    
+    r""" Linear Interpolation of the corresponding (x,y) coordinates given query (u,v) unwrap 2D coordinates where the injective map (u,v) -> (x,y) is given by uv_xy_unwrap_params.
+
+    Parameters
+    ----------
+    uv_pts2D : (Nx2) array
+        the unwrap, (u,v) coordinate at N positions for which original (x,y) coordinates is desired 
+    uv_xy_unwrap_params : (U,V,2) array
+        the lookup table mapping the (U,V) grid to (x,y) in original shape space 
+    
+    Returns
+    -------
+    xyz_pts2D : (Nx2) array
+        The corresponding (x,y) coordinates into the space indexed by uv_xy_unwrap_params.
+    """
+    import unwrap3D.Image_Functions.image as unwrap3D_image_fn
+    import numpy as np 
+
+    uv_pts2D_ = uv_pts2D.copy()
+    uv_pts2D_[...,0] = np.clip(uv_pts2D[:,0], 0, uv_xy_unwrap_params.shape[0]-1)
+    uv_pts2D_[...,1] = np.clip(uv_pts2D[:,1], 0, uv_xy_unwrap_params.shape[1]-1)
+
+    xyz_pts2D = np.array([unwrap3D_image_fn.map_intensity_interp2(uv_pts2D_, 
+                                                    grid_shape=uv_xy_unwrap_params.shape[:-1], 
+                                                    I_ref=uv_xy_unwrap_params[...,ch]) for ch in np.arange(uv_xy_unwrap_params.shape[-1])])
+    xyz_pts2D = xyz_pts2D.T.copy()
+    return xyz_pts2D
+
+
+def make_circle_contour(radius = 1, 
+                        centroid=np.hstack([0,0]), 
+                        n_pts=100, 
+                        closed_contour=False):
+    
+    import numpy as np 
+    
+    if closed_contour:
+        theta = np.linspace(0, 2*np.pi, n_pts-1) # as last point is the first point. 
+    else:
+        theta = np.linspace(0, 2*np.pi, n_pts+1) # we will delete the last point
+    
+    x = radius * np.cos(theta) + centroid[0]
+    y = radius * np.sin(theta) + centroid[1]
+    
+    contour = np.vstack([x,y]).T
+    
+    if closed_contour:
+        contour = np.vstack([contour[:], 
+                            contour[0][None,:]])
+    else:
+        contour = contour[:-1].copy()
+        
+    return contour
+    
+
+def transform_contour(contour, tform_matrix):
+    
+    import numpy as np 
+    
+    contour_out = tform_matrix.dot(np.vstack([contour.T, 
+                                              np.ones(len(contour))]))[:2].T
+    
+    return contour_out
+
+
+def pixelize_contours(contour, imshape=None, padsize=50):
+    
+    import numpy as np 
+    import skimage.draw as skdraw
+    
+
+    if imshape is None:
+        m_max = np.max(contour[...,0])
+        n_max = np.max(contour[...,1])
+        
+        m_max = m_max + padsize
+        n_max = n_max + padsize
+        
+    else:
+        m, n = imshape[:2]
+        
+        m_max = m 
+        n_max = n 
+    blank = np.zeros((m_max,n_max))
+
+    yy,xx = skdraw.polygon(contour[:,0], 
+                           contour[:,1], 
+                           shape=imshape)
+
+    blank[yy,xx] = 1
+
+    return blank    
+    
+
+def register_contour_array(contour_array, ref_id=0, tform='Similarity'):
+    
+    import skimage.transform as sktform 
+    import numpy as np 
+    
+    # register: 
+    if tform == 'Similarity':
+        tform = sktform.SimilarityTransform()
+    if tform == 'Euclidean':
+        tform = sktform.EuclideanTransform()
+    if tform == 'Affine':
+        tform = sktform.AffineTransform()
+        
+
+    contour_array_out = np.zeros_like(contour_array)
+    
+    for iii in np.arange(contour_array.shape[-1]):
+        
+        cnt = contour_array[...,iii].copy()
+        tform.estimate(contour_array[...,iii], 
+                       contour_array[...,ref_id]) # dst 
+        
+        cnt_tfm = transform_contour(cnt, tform.params)
+        contour_array_out[...,iii] = cnt_tfm.copy()
+        
+    return contour_array_out
+
+
+def contour_area(contour, close_contour=True):
+    
+    import numpy as np 
+    contour_ = contour.copy()
+    if close_contour:
+        contour_ = np.vstack([contour_, 
+                              contour_[0][None,:]]).T
+    
+    x=contour_[:,0]
+    y=contour_[:,1]
+    area=0.5*np.sum(y[:-1]*np.diff(x) - x[:-1]*np.diff(y))
+    area=np.abs(area)
+    
+    return area 
+
+# construct the laplacian grid for a 2D image. (might be faster to exploit kron! )
+def _laplacian_matrix(n, m, mask=None): # this is the only working solution! 
+    
+    import scipy.sparse
+    from scipy.sparse.linalg import spsolve
+    import numpy as np 
+    
+    mat_D = scipy.sparse.lil_matrix((m, m))
+    mat_D.setdiag(-1, -1)
+    mat_D.setdiag(4)
+    mat_D.setdiag(-1, 1)
+    
+    mat_A = scipy.sparse.block_diag([mat_D] * n).tolil()
+    
+    mat_A.setdiag(-1, 1*m)
+    mat_A.setdiag(-1, -1*m)
+    
+    if mask is not None:
+        y_range = mask.shape[0]
+        x_range = mask.shape[1]
+        # find the masked i.e. zeros
+        zeros = np.argwhere(mask==0) # in (y,x)
+        k = zeros[:,1] + zeros[:,0] * x_range
+        mat_A[k,k] = 1
+        mat_A[k, k + 1] = 0
+        mat_A[k, k - 1] = 0
+        mat_A[k, k + x_range] = 0
+        mat_A[k, k - x_range] = 0
+        
+        mat_A = mat_A.tocsc()
+    else:
+        mat_A = mat_A.tocsc()
+    
+    return mat_A
+
+def poisson_dist_tform(binary, pt=None):
+    """
+    Computation for a single binary image. 
+    """
+    import scipy.sparse
+    from scipy.sparse.linalg import spsolve
+    import numpy as np 
+    
+    mask = np.pad(binary, [1,1], mode='constant', constant_values=1) # pad with ones.  # ones need for connectivity....
+    
+    mat_A = _laplacian_matrix(mask.shape[0], mask.shape[1], mask=mask) # this is correct!
+
+    if pt is not None:
+        mask = np.zeros_like(mask)
+        mask[pt[:,0], pt[:,1]] = 1
+        
+        mask_flat = mask.flatten()    
+        mat_b = np.zeros(len(mask_flat))
+        mat_b[mask_flat == 1] = 1
+        
+    else:
+        # now we need to zero the padding
+        mask[0,:]=0
+        mask[:,-1]=0
+        mask[-1,:]=0
+        mask[:,0]=0
+        
+        # solve within the mask!    
+        mask_flat = mask.flatten()    
+        # inside the mask:
+        # \Delta f = div v = \Delta g       
+        mat_b = np.ones(len(mask_flat)) # does this matter -> the amount... 
+        mat_b[mask_flat == 0] = 0
+        
+    x = spsolve(mat_A, mat_b, permc_spec='MMD_AT_PLUS_A') 
+    x = x.reshape(mask.shape)
+    x = x[1:-1,1:-1].copy()
+    x = x - x.min() # solution is only positive!.
+    
+    return x 
+
+
+def sdf_poisson(mask, pt=None):
+    
+    import numpy as np 
+    import scipy.ndimage as ndimage
+    import skimage.morphology as skmorph
+    import pylab as plt 
+    # import unwrap3D.Segmentation.segmentation as unwrap3D_segmentation 
+    # all_ones = np.ones(mask.shape, dtype=bool)
+    border_pts = np.zeros(mask.shape, dtype=bool)
+    border_pts[:1] = 1
+    border_pts[-1:] = 1
+    border_pts[:,:1] = 1
+    border_pts[:,-1:] = 1
+    border_coords = np.argwhere(border_pts>0)
+    
+    # print(border_coords.shape)
+    
+    sdf = np.zeros(mask.shape[:2]) 
+    sdf_inner = poisson_dist_tform(mask, pt=pt)
+    # sdf_outer = ndimage.distance_transform_edt(np.logical_not(mask>0))
+    sdf_outer = poisson_dist_tform(np.logical_not(mask), pt=border_coords)
+    # plt.figure()
+    # plt.imshow(sdf_outer)
+    # plt.show()
+    sdf[np.logical_not(mask>0)] = -sdf_outer[np.logical_not(mask>0)]
+    sdf[mask>0] = sdf_inner[mask>0]
+    
+    return sdf 
+
+
+def measure_signed_distance(contour_ref, contours, imshape):
+    
+    import skimage.draw as skdraw
+    import numpy as np 
+    
+    mask = np.zeros(imshape, dtype=bool)
+    yy,xx = skdraw.polygon(contour_ref[:,0], 
+                           contour_ref[:,1], shape=imshape)
+    mask[yy,xx] = 1
+    
+    sign_dists = mask[contours[0,:,0].astype(np.int32), 
+                      contours[0,:,1].astype(np.int32)]==0
+    sign_dists = sign_dists*1
+    sign_dists[sign_dists==0] = -1
+    
+    
+    contour_ref_dist_to_contours = np.nanmean(np.linalg.norm(contour_ref[None,...] - contours, axis=-1), axis=1) 
+    contour_ref_ind = np.argmin(contour_ref_dist_to_contours)
+    
+    print(contour_ref_ind)
+    dists = np.nansum(np.linalg.norm(np.diff(contours[:contour_ref_ind+1], axis=0), axis=-1), axis=0) * sign_dists
+    
+    return dists, sign_dists
+    
+
+def map_contour_to_unit_circle(pts, close_contour = True):
+    
+    import numpy as np 
+    
+    pts_ = pts.copy()
+    
+    if close_contour: 
+        pts_ = np.vstack([pts_, 
+                          pts_[0][None,:]])
+    
+    pts_dists = np.linalg.norm(np.diff(pts_, axis=0), axis=-1)
+    pts_dists = np.hstack([0, np.cumsum(pts_dists)])    
+    # rescale the cum differences. to be circumference of circle i.e. 2*np.pi
+    
+    theta = pts_dists/float(pts_dists[-1]) * 2*np.pi
+    
+    theta_coords = np.vstack([np.cos(theta), 
+                              np.sin(theta)]).T
+
+    if close_contour:
+        theta_coords = theta_coords[:-1]
+    
+    return theta_coords
+    
+    
+def map_protrusion_topography_to_circle(contour_ref, signed_protrusion_d, circle_R=50, close_contour=True):
+    
+    # map contour to circle
+    circle_coords = map_contour_to_unit_circle(contour_ref, close_contour = close_contour)
+    
+    normal = circle_coords.copy()
+    circle_coords = circle_R*circle_coords
+    
+    # now offset the normal 
+    topo_coords = circle_coords + signed_protrusion_d[:,None] * normal
+    
+    return topo_coords, circle_coords
+    
+
+
+def curvature_splines(x, y, k=4, error=0.1):
+    """Calculate the signed curvature of a 2D curve at each point using interpolating splines.
+    
+    Parameters
+    ----------
+    x : (n_points,) array 
+        x-coordinate of the contour 
+    y : (n_points,) array 
+        y-coordinate of the contour 
+    k : int
+        order of the interpolating spline
+    error : float
+        The admisible error when interpolating the splines
+        
+    Returns
+    -------
+    [x_, y_] : [(n_points,) array, (n_points,) array]
+        the spline evaluated (and smoothened) x and y coordinate at each point of a 2D curve for which curvature is evaluated at
+    [x_prime, y_prime] : [(n_points,) array, (n_points,) array]
+        the 1st derivative of the x and y coordinate at each point of a 2D curve
+    curvature : (n_points,) array 
+        the signed curvature of a 2D curve at each point 
+    """
+    from scipy.interpolate import UnivariateSpline
+    import numpy as np 
+    
+    # handle list of complex case
+    if y is None:
+        x, y = x.real, x.imag
+
+    t = np.arange(x.shape[0])
+    std = error * np.ones_like(x)
+
+    fx = UnivariateSpline(t, x, k=k, w=1 / np.sqrt(std))
+    fy = UnivariateSpline(t, y, k=k, w=1 / np.sqrt(std))
+
+    x_ = fx(t)
+    y_ = fy(t)
+
+    x_prime = fx.derivative(1)(t)
+    x_prime_prime = fx.derivative(2)(t)
+    y_prime = fy.derivative(1)(t)
+    y_prime_prime = fy.derivative(2)(t)
+    curvature = (x_prime * y_prime_prime - y_prime* x_prime_prime) / np.power(x_prime** 2 + y_prime** 2, 3. / 2)
+#    return [x_, y_], [xˈ, yˈ], curvature
+    return [x_, y_], [x_prime, y_prime], curvature
+
+
+
+def discrete_curvature(x,y):
+    
+    def _PJcurvature(x,y):
+        """
+        input  : the coordinate of the three point
+        output : the curvature and norm direction
+        """
+        import numpy as np
+        import numpy.linalg as LA
+
+        t_a = LA.norm([x[1]-x[0],y[1]-y[0]])
+        t_b = LA.norm([x[2]-x[1],y[2]-y[1]])
+        
+        M = np.array([
+            [1, -t_a, t_a**2],
+            [1, 0,    0     ],
+            [1,  t_b, t_b**2]
+        ])
+    
+        a = np.matmul(LA.inv(M),x)
+        b = np.matmul(LA.inv(M),y)
+    
+        kappa = 2*(a[2]*b[1]-b[2]*a[1])/(a[1]**2.+b[1]**2.)**(1.5)
+        return kappa, [b[1],-a[1]]/np.sqrt(a[1]**2.+b[1]**2.)
+        
+    import numpy as np 
+    
+    x_t = np.hstack([x[-1],
+                     x, 
+                     x[0]])
+    y_t = np.hstack([y[-1], 
+                     y,
+                     y[0]])
+    
+    x_y_t = np.vstack([x_t, y_t]).T
+    curve_t = []
+    
+    for idx, xy in enumerate(x_y_t[1:-1]):
+        x = x_y_t[idx:idx+3,0]
+        y = x_y_t[idx:idx+3,1]
+        kappa,norm = _PJcurvature(x,y)
+        curve_t.append(kappa)
+        
+    return np.hstack(curve_t)
+        
+
+def baseline_als(y, lam, p, niter=10):
+    from scipy import sparse
+    from scipy.sparse.linalg import spsolve
+    import numpy as np 
+    
+    L = len(y)
+    D = sparse.csc_matrix(np.diff(np.eye(L), 2))
+    w = np.ones(L)
+    for i in range(niter):
+        W = sparse.spdiags(w, 0, L, L)
+        Z = W + lam * D.dot(D.transpose())
+        z = spsolve(Z, w*y)
+        w = p * (y > z) + (1-p) * (y < z)
+    return z
+
+
+def resample_disk_grid_to_square_img_grid(disk,
+                                          img_pts, 
+                                          faces, 
+                                          img_I,
+                                          raster_size=256, 
+                                          method='elliptical_nowell'):
+    
+    import numpy as np 
+    import unwrap3D.Mesh.meshtools as unwrap3D_meshtools
+    import unwrap3D.Image_Functions.image as unwrap3D_image_fn
+    import unwrap3D.Geometry.geometry as unwrap3D_geometry
+    import scipy.interpolate as scinterp
+    
+    disk_pts = np.clip(disk, -1,1.) 
+    
+    # disk to square
+    if method == 'elliptical_nowell':
+        square = np.clip(unwrap3D_geometry.elliptical_nowell(disk_pts[:,:]), -1,1) #* raster_size//2 + raster_size//2
+    if method == 'squicircle':
+        square = np.clip(unwrap3D_geometry.squicircle(disk_pts[:,:]), -1,1)
+    if method == 'squicircle':
+        square = np.clip(unwrap3D_geometry.squicircle(disk_pts[:,:]), -1,1)
+    square = (square+1)*(raster_size-1)//2 # resample only discrete grid. 
+    
+    """
+    resampling the image. 
+    """
+    # create the grid. 
+    N = raster_size
+    unwrap_params = np.zeros((N, N, img_pts.shape[-1]))
+    YY, XX = np.indices(unwrap_params.shape[:2])
+    
+    mask_img_out = np.vstack([YY.ravel(), XX.ravel()]).T
+    mesh_ref = unwrap3D_meshtools.create_mesh(np.hstack([np.zeros(len(square))[:,None], 
+                                                         square]), 
+                                                           faces)
+    mesh_match = unwrap3D_meshtools.match_and_interpolate_uv_surface_to_mesh(np.hstack([np.zeros(len(mask_img_out))[:,None], 
+                                                                                                    mask_img_out]).reshape(-1,3), 
+                                                                                             mesh_ref, match_method='cross')
+    
+    mask_img_out_2D_img_pts = unwrap3D_meshtools.mesh_vertex_interpolate_scalar(mesh_ref, 
+                                                                               mesh_match[0], 
+                                                                               mesh_match[1],
+                                                                               img_pts)
+    unwrap_params = mask_img_out_2D_img_pts.reshape(unwrap_params.shape)
+    
+    valid_mask = np.logical_not(np.isnan(unwrap_params).sum(axis=-1)>0)
+    # the above might be incomplete. (refine)
+    unwrap_params[...,0] = scinterp.griddata(np.vstack([YY[valid_mask>0], 
+                                                        XX[valid_mask>0]]).T, unwrap_params[valid_mask>0,0], 
+                                             (YY, XX), method='linear', fill_value=np.nan)
+    unwrap_params[...,1] = scinterp.griddata(np.vstack([YY[valid_mask>0], 
+                                                        XX[valid_mask>0]]).T, unwrap_params[valid_mask>0,1], 
+                                             (YY, XX), method='linear', fill_value=np.nan)
+    
+    unwrap_img = unwrap3D_image_fn.map_intensity_interp2(mask_img_out_2D_img_pts, 
+                                                      grid_shape=img_I.shape, 
+                                                      I_ref=img_I)
+    unwrap_img = unwrap_img.reshape((N,N))
+    
+    return unwrap_params, unwrap_img 
+
+    
+def resample_disk_grid_to_img_grid(disk, img_pts, faces, img_I, raster_size=256, border_pad=32):
+    
+    """
+    This might have clipped the boundaries.... 
+    """
+    import numpy as np  
+    import unwrap3D.Mesh.meshtools as unwrap3D_meshtools
+    import unwrap3D.Image_Functions.image as unwrap3D_image_fn
+    
+    disk_pts = (np.clip(disk, -1,1.) + 1)/2.*raster_size + border_pad
+    
+    N = raster_size+2*border_pad
+    unwrap_params = np.zeros((N, N, img_pts.shape[-1]))
+    YY, XX = np.indices(unwrap_params.shape[:2])
+    mask = np.sqrt((XX-N/2.)**2 + (YY-N/2.)**2) <= raster_size/2.
+    
+    mask_img_out = np.vstack([YY[mask>0], 
+                              XX[mask>0]]).T
+    
+    mesh_ref = unwrap3D_meshtools.create_mesh(np.hstack([np.zeros(len(disk_pts))[:,None], 
+                                                  disk_pts]), 
+                                                   faces)
+    mesh_match = unwrap3D_meshtools.match_and_interpolate_uv_surface_to_mesh(np.hstack([np.zeros(len(mask_img_out))[:,None], 
+                                                                                        mask_img_out]).reshape(-1,3), 
+                                                                             mesh_ref, match_method='cross')
+    
+    # mask_img_out_2D_img_pts = np.array([mesh_vertex_interpolate_scalar(mesh_ref, 
+    #                                                                    mesh_match[0], 
+    #                                                                    mesh_match[1], 
+    #                                                                    img_pts[...,ch].ravel()) for ch in np.arange(img_pts.shape[-1])]).T
+    mask_img_out_2D_img_pts = unwrap3D_meshtools.mesh_vertex_interpolate_scalar(mesh_ref, 
+                                                                       mesh_match[0], 
+                                                                       mesh_match[1],
+                                                                       img_pts)
+    unwrap_params[mask>0] = mask_img_out_2D_img_pts.copy()
+    
+    
+    unwrap_img = np.zeros((N, N))
+    I_verts = unwrap3D_image_fn.map_intensity_interp2(mask_img_out_2D_img_pts, 
+                                                      grid_shape=img_I.shape, 
+                                                      I_ref=img_I)
+    unwrap_img[mask>0] = I_verts.copy()
+    
+    return unwrap_params, unwrap_img, mask>0 # this is the mapping already... 
+    
+
+
+def parametric_line_flow_2D(contour_pts,
+                            external_img_gradient, 
+                            E=None, 
+                            close_contour=True, 
+                            fixed_boundary = False, 
+                            lambda_flow=1000, 
+                            step_size=1,
+                            niters=10, 
+                            conformalize=True,
+                            eps=1e-12):
+
+    import numpy as np 
+    import scipy.sparse as spsparse
+    # from ..Unzipping import unzip_new as uzip 
+    import unwrap3D.Mesh.meshtools as unwrap3D_meshtools
+    import unwrap3D.Image_Functions.image as unwrap3D_imagefn
+
+    if E is None:
+        if close_contour:
+            E = [np.arange(len(contour_pts)), 
+                 np.hstack([np.arange(len(contour_pts))[1:], 0])]
+        else:
+            E = [np.arange(len(contour_pts))[:-1], 
+                 np.arange(len(contour_pts))[1:]]
+        E = np.vstack(E).T
+
+    A = unwrap3D_meshtools.adjacency_edge_cost_matrix(contour_pts, E)
+    L = A-spsparse.diags(np.squeeze(np.array(A.sum(axis=1)))); # why is this so slow?  #### is this correct? 
+
+    if fixed_boundary:
+        boundary_nodes = np.arange(len(contour_pts))[A.sum(axis=1) == 1]
+        L[boundary_nodes,:] = 0 # slice this in. 
+    
+    # so we need no flux boundary conditions to prevent flow in x,y at the boundary!....----> one way is to do mirror...( with rectangular grid this is easy... but with triangle is harder...)
+    contour_pts_flow = [contour_pts]
+    for iter_ii in np.arange(niters):
+        A = unwrap3D_meshtools.adjacency_edge_cost_matrix(contour_pts_flow[-1], E)
+        if conformalize==False:
+            L = A-spsparse.diags(np.squeeze(np.array(A.sum(axis=1))));
+            if fixed_boundary:
+                boundary_nodes = np.arange(len(contour_pts))[A.sum(axis=1) == 1]
+                L[boundary_nodes,:] = 0 # slice this in. 
+        M = unwrap3D_meshtools.mass_matrix2D(A)
+        
+        """
+        look up external gradients. 
+        """
+        U_grad = np.array([unwrap3D_imagefn.map_intensity_interp2(contour_pts_flow[-1], 
+                                                      grid_shape=external_img_gradient.shape[:-1], 
+                                                      I_ref=external_img_gradient[...,ch]) 
+                                                       for ch in np.arange(external_img_gradient.shape[-1])])
+        U_grad = U_grad.T
+        U_grad = U_grad / (np.linalg.norm(U_grad, axis=-1)[:,None] + eps)
+        
+        vvv = spsparse.linalg.spsolve(M-lambda_flow*L, M.dot(contour_pts_flow[-1] + U_grad * step_size))
+        
+        contour_pts_flow.append(vvv)
+    contour_pts_flow = np.array(contour_pts_flow)
+    contour_pts_flow = contour_pts_flow.transpose(1,2,0)
+
+    return contour_pts_flow
+
+
+def binary_to_mesh(mask, keep_largest=True):
+    
+    import unwrap3D.Mesh.meshtools as unwrap3D_meshtools
+    
+    grid_quads, grid_tri = unwrap3D_meshtools.get_uv_grid_quad_connectivity(mask>0, 
+                                                                            return_triangles=True, 
+                                                                            bounds='none')
+    
+    grid_pts = np.dstack(np.indices(mask.shape)).reshape(-1,2)
+    grid_pts = np.hstack([np.zeros(len(grid_pts))[:,None], 
+                          grid_pts])
+    grid_bool = mask.ravel() > 0
+    
+    
+    face_bool = grid_bool[grid_tri].copy()
+    face_invalid_index = np.unique(np.argwhere(face_bool==0)[:,0])
+    face_keep_index = np.setdiff1d(np.arange(len(grid_tri)), face_invalid_index)
+    # keep_tri_indices = np.hstack([iii for iii in np.arange(len(grid_tri)) if np.sum(np.intersect1d(grid_tri, invalid_pts))==0])
+    
+    mesh_2D = unwrap3D_meshtools.create_mesh(grid_pts[:,:], grid_tri[face_keep_index][:,::-1])
+    if keep_largest:
+        mesh_2D_comps = mesh_2D.split(only_watertight=False)
+        mesh_2D = mesh_2D_comps[np.argmax([len(ccc.vertices) for ccc in mesh_2D_comps])]
+        
+    return mesh_2D
+
+
+# Master function for unwrapping given 2D image and binary mask
+def unwrap_2D(img, 
+              mask, 
+              conformal_map=False, 
+              debugviz_tri_areadistort = False,
+              areadistort_max_iter = 100,
+              areadistort_delta_h_bound = 0.5,
+              areadistort_stepsize=0.1,
+              use_uniform_area_distort_relax=True,
+              remesh_initial_mesh=True,
+              average_edge_len_factor_initial=1.,
+              remesh_initial_conformal=True,
+              average_edge_len_factor=1.,
+              area_distort_flip_tri=True,
+              robust_L=True,
+              eps=1,
+              return_steps=False): 
+    
+    import numpy as np 
+    import igl 
+    import unwrap3D.Mesh.meshtools as unwrap3D_meshtools
+    
+    # # 1. build a mesh from the binary 
+    # grid_quads, grid_tri = unwrap3D_meshtools.get_uv_grid_quad_connectivity(mask>0, 
+    #                                                                         return_triangles=True, 
+    #                                                                         bounds='none')
+    
+    # grid_pts = np.dstack(np.indices(mask.shape)).reshape(-1,2)
+    # grid_pts = np.hstack([np.zeros(len(grid_pts))[:,None], 
+    #                       grid_pts])
+    # grid_bool = mask.ravel() > 0
+    
+    
+    # face_bool = grid_bool[grid_tri].copy()
+    # face_invalid_index = np.unique(np.argwhere(face_bool==0)[:,0])
+    # face_keep_index = np.setdiff1d(np.arange(len(grid_tri)), face_invalid_index)
+    # # keep_tri_indices = np.hstack([iii for iii in np.arange(len(grid_tri)) if np.sum(np.intersect1d(grid_tri, invalid_pts))==0])
+    
+    # mesh_2D = unwrap3D_meshtools.create_mesh(grid_pts[:,:], grid_tri[face_keep_index][:,::-1])
+    # mesh_2D_comps = mesh_2D.split(only_watertight=False)
+    # mesh_2D_submesh = mesh_2D_comps[np.argmax([len(ccc.vertices) for ccc in mesh_2D_comps])]
+    
+    mesh_2D_submesh = binary_to_mesh(mask>0, keep_largest=True)
+    
+    if remesh_initial_mesh:
+        mesh_2D_submesh = unwrap3D_meshtools.incremental_isotropic_remesh(mesh_2D_submesh, 
+                                                                           target_edge_length=average_edge_len_factor_initial*igl.avg_edge_length(mesh_2D_submesh.vertices, mesh_2D_submesh.faces),
+                                                                           n_iters=5)
+    
+    # 2. harmonic (conformal) mapping to the 2D disk 
+    # disk_coords = rectangular_conformal_map(mesh_2D_submesh.vertices,
+    #                                         mesh_2D_submesh.faces[:,:],
+    #                                         corner=None,  
+    #                                         random_state=0)
+    disk_coords = unwrap3D_meshtools.rectangular_conformal_map(mesh_2D_submesh.vertices,
+                                                               mesh_2D_submesh.faces[:,:],
+                                                               corner=None,  
+                                                               random_state=None) # don't do random!. 
+    
+    # 3. resample the harmonic (conformal) mapping to the 2D disk to get better mesh quality 
+    # disk_coords_mesh = unwrap3D_meshtools.create_mesh(disk_coords, mesh_2D_submesh.faces)
+    # # disk_coords_relax = [disk_coords_mesh]
+    
+    # # ok ... we need a remesher for this. 
+    # # disk_coords_relax = relax_mesh( disk_coords_mesh, 
+    # #                                 relax_method='CVT (block-diagonal)', 
+    # #                                 tol=relax_tol, 
+    # #                                 n_iters=relax_niters, 
+    # #                                 omega=relax_omega)
+    
+    # if conformal_map == False:
+    
+    # 4. Match and compute the corresponding real image coordinates that this resampled disk matches to!. 
+    mesh_ref = unwrap3D_meshtools.create_mesh(np.hstack([np.zeros(len(disk_coords))[:,None], 
+                                                            disk_coords]), mesh_2D_submesh.faces)
+    
+    if remesh_initial_conformal:
+        average_edge_length = average_edge_len_factor*igl.avg_edge_length(mesh_ref.vertices, mesh_ref.faces)
+        disk_coords_relax = unwrap3D_meshtools.incremental_isotropic_remesh(mesh_ref, 
+                                                                           target_edge_length=average_edge_length,
+                                                                           n_iters=5)
+        disk_coords_relax.vertices = disk_coords_relax.vertices[:,1:]
+    else:
+        disk_coords_relax = unwrap3D_meshtools.create_mesh(disk_coords, mesh_2D_submesh.faces)
+        # disk_coords_relax = disk_coords_mesh
+        
+    disk_coords_relax = [disk_coords_relax]
+    disk_coords_relax_pts = disk_coords_relax[0].vertices.copy()
+    
+    # print(disk_coords_relax_pts.shape)
+    uv_mesh_match = unwrap3D_meshtools.match_and_interpolate_uv_surface_to_mesh(np.hstack([np.zeros(len(disk_coords_relax_pts))[:,None], 
+                                                                                           disk_coords_relax_pts]).reshape(-1,3), 
+                                                                        mesh_ref, match_method='cross')
+    
+    mesh_2D_submesh_pts = unwrap3D_meshtools.mesh_vertex_interpolate_scalar(mesh_ref, 
+                                                                    uv_mesh_match[0], 
+                                                                    uv_mesh_match[1], 
+                                                                    mesh_2D_submesh.vertices)
+    disk_coords = disk_coords_relax[0].vertices.copy()
+    mesh_2D_disk = unwrap3D_meshtools.create_mesh(np.hstack([np.zeros(len(disk_coords))[:,None], 
+                                          disk_coords]),
+                                            disk_coords_relax[0].faces)
+    
+    mesh_2D_submesh = unwrap3D_meshtools.create_mesh(mesh_2D_submesh_pts,
+                                                     disk_coords_relax[0].faces)
+    
+    if not conformal_map:
+        # perform area relax. 
+    
+        if use_uniform_area_distort_relax:
+            # 5. Area relax the mesh 
+            v_steps, f_steps, area_distortion_iter = unwrap3D_meshtools.uniform_distortion_flow_relax_disk(mesh_2D_disk, 
+                                                                                    max_iter=areadistort_max_iter,
+                                                                                    delta_h_bound=areadistort_delta_h_bound, 
+                                                                                    stepsize=areadistort_stepsize, 
+                                                                                    flip_delaunay=area_distort_flip_tri, # breaking out because of this.... 
+                                                                                    robust_L=robust_L, # use the robust laplacian instead of cotmatrix - slows flow. 
+                                                                                    mollify_factor=1e-5,
+                                                                                    eps = eps,
+                                                                                    debugviz=False,
+                                                                                    debugviz_tri=debugviz_tri_areadistort)
+        else:
+            # 5. Area relax the mesh 
+            v_steps, f_steps, area_distortion_iter = unwrap3D_meshtools.area_distortion_flow_relax_disk(mesh_2D_disk, 
+                                                                                                        mesh_2D_submesh,
+                                                                                    max_iter=areadistort_max_iter,
+                                                                                    delta_h_bound=areadistort_delta_h_bound, 
+                                                                                    stepsize=areadistort_stepsize, 
+                                                                                    flip_delaunay=area_distort_flip_tri, # breaking out because of this.... 
+                                                                                    robust_L=robust_L, # use the robust laplacian instead of cotmatrix - slows flow. 
+                                                                                    mollify_factor=1e-5,
+                                                                                    eps = eps,
+                                                                                    debugviz=False,
+                                                                                    debugviz_tri=debugviz_tri_areadistort)
+            
+        # 6. find the optimum point. 
+        if len(area_distortion_iter) > 0:
+            # mean_area_distortion_iter = np.log(np.nanmean(np.array(area_distortion_iter),axis=1)) # we need to smooth this!
+            mean_area_distortion_iter = np.nanmean(np.array(area_distortion_iter),axis=1) # we need to smooth this!
+            
+            if debugviz_tri_areadistort:
+                import pylab as plt 
+                plt.figure()
+                plt.plot(mean_area_distortion_iter)
+                plt.show()
+            
+            # smooth this - as this is super bumpy. 
+            # mean_area_distortion_iter = baseline_als(mean_area_distortion_iter, lam=1000, p=0.1) # suppress the isolated bumps!!!!. 
+            mean_area_distortion_iter = baseline_als(mean_area_distortion_iter, lam=1, p=0.1) # suppress the isolated bumps!!!!. 
+            
+            if debugviz_tri_areadistort:
+                import pylab as plt 
+                plt.figure()
+                plt.plot(mean_area_distortion_iter)
+                plt.show()
+            
+            change = np.arange(len(mean_area_distortion_iter))[1:][np.diff(mean_area_distortion_iter)>0] 
+            
+            if len(change) > 0: # This doesn' really matter. 
+                # min_distort_id = np.maximum(0, change[0] - 5)
+                min_distort_id = np.maximum(0,len(mean_area_distortion_iter) - 5)
+            else:
+                min_distort_id = np.maximum(0,len(mean_area_distortion_iter) - 5)
+            
+            # construct the submesh!. 
+            v_out = np.array(v_steps)[min_distort_id].copy()
+            f_steps_out = np.array(f_steps)[min_distort_id].copy()          
+            
+            if return_steps:
+                return v_out, f_steps_out, mesh_2D_submesh.vertices, (v_steps, f_steps, area_distortion_iter, min_distort_id)
+            else:
+                return v_out, f_steps_out, mesh_2D_submesh.vertices
+            
+        else:
+            v_out = v_steps[0].copy()
+            f_steps_out = f_steps[0].copy()
+        
+        # 7. Build the circular image 
+            return v_out, f_steps_out, mesh_2D_submesh.vertices
+    else:
+        # for consistency of api 
+        disk_coords = np.hstack([np.zeros(len(disk_coords))[:,None], disk_coords]).reshape(-1,3)
+        return disk_coords, mesh_2D_submesh.faces, mesh_2D_submesh.vertices
+
