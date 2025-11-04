@@ -25,7 +25,11 @@ The functions in this library on built on the idealogy of u-Unwrap3D for 2D. For
 The simplest way to get started is to check out the included notebooks which walks through the steps described in the paper for obtaining all representation starting from step0: the extraction of surface from a binary cell segmentation.
 
 ## Dependencies and Installation
-We are still working on setting up a pip installable version of the repository. The only dependency is u-Unwrap3D, our 3D unwrapping library which can be installed using the command below from PyPI or from its GitHub, https://github.com/DanuserLab/u-unwrap3D. u-Unwrap3D has been tested for Python 3.9-3.12.
+You should be able to install the library using `pip`:
+```
+pip install .
+```
+Should this fail, the only dependency is u-Unwrap3D, our 3D unwrapping library which can be installed using the command below from PyPI or from its GitHub, https://github.com/DanuserLab/u-unwrap3D. u-Unwrap3D has been tested for Python 3.9-3.12. You can try installing that library first, then perform the above `pip install .`. 
 ```
 pip install u-Unwrap3D
 ```
