@@ -39,6 +39,7 @@ Feel free to open a GitHub issue, and we will get back as soon as we can.
 
 ## Developers
 Felix Zhou (felixzhou1@gmail.com)
+
 Shiqiu Yu (Shiqiu.Yu2@UTSouthwestern.edu)
 
 ## Danuser Lab Links
