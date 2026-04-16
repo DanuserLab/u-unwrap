@@ -4,13 +4,13 @@
   <img src="docs/imgs/mapping_2D_overview.png" width="400"/>
 </p>
 
-[![PyPI version](https://badge.fury.io/py/u-Unwrap3D.svg)](https://badge.fury.io/py/u-Unwrap)
-[![Downloads](https://pepy.tech/badge/u-Unwrap3D)](https://pepy.tech/project/u-Unwrap)
-[![Downloads](https://pepy.tech/badge/u-Unwrap3D/month)](https://pepy.tech/project/u-Unwrap)
-[![Python version](https://img.shields.io/pypi/pyversions/u-Unwrap3D)](https://pypistats.org/packages/u-Unwrap)
-[![GitHub stars](https://img.shields.io/github/stars/DanuserLab/u-Unwrap3D?style=social)](https://github.com/DanuserLab/u-unwrap/)
-[![GitHub forks](https://img.shields.io/github/forks/DanuserLab/u-Unwrap3D?style=social)](https://github.com/DanuserLab/u-unwrap/)
-[![Licence: GPL v3](https://img.shields.io/github/license/DanuserLab/u-Unwrap3D)](https://github.com/DanuserLab/u-unwrap/blob/master/LICENSE)
+[![PyPI version](https://badge.fury.io/py/u-Unwrap.svg)](https://badge.fury.io/py/u-Unwrap)
+[![Downloads](https://pepy.tech/badge/u-Unwrap)](https://pepy.tech/project/u-Unwrap)
+[![Downloads](https://pepy.tech/badge/u-Unwrap/month)](https://pepy.tech/project/u-Unwrap)
+[![Python version](https://img.shields.io/pypi/pyversions/u-Unwrap)](https://pypistats.org/packages/u-Unwrap)
+[![GitHub stars](https://img.shields.io/github/stars/DanuserLab/u-unwrap?style=social)](https://github.com/DanuserLab/u-unwrap/)
+[![GitHub forks](https://img.shields.io/github/forks/DanuserLab/u-unwrap?style=social)](https://github.com/DanuserLab/u-unwrap/)
+[![Licence: GPL v3](https://img.shields.io/github/license/DanuserLab/u-unwrap)](https://github.com/DanuserLab/u-unwrap/blob/master/LICENSE)
 
 #### August 29, 2024
 u-Unwrap2D is a Python library built on top of u-Unwrap3D to map 2D contours and images into canonical representations to facilitate analysis with particular attention to single cell biology.
