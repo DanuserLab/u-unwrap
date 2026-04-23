@@ -20,7 +20,7 @@ description="Map 2D cellular shapes to disk, square and rectangle representation
 authors = [{name='Felix Y. Zhou, Shiqiu Yu', email='felixzhou1@gmail.com'}]
 readme = "README.md"
 license={file = "LICENSE"}
-version = "0.1.0"
+version = "0.1.1"
 classifiers = [
     "Intended Audience :: Developers",
     "Operating System :: POSIX :: Linux",
