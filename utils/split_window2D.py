@@ -3,7 +3,8 @@ import skimage.segmentation as sksegmentation
 import matplotlib.pyplot as plt
 import os
 
-SAVE_DIR = '/Users/yushiqiu/Desktop/UTSW/rotation_project/Gaudenz/track_window/output/2024_08_22'
+
+#SAVE_DIR = '/Users/yushiqiu/Desktop/UTSW/rotation_project/Gaudenz/track_window/output/2024_08_22'
 
 class UnwrapWindow():
     def __init__(self, unwrap_img, unwrap_params, raster_size, border_pad):
@@ -36,13 +37,13 @@ class UnwrapWindow():
             windows: corresponding values of the segments
 
         """
-        segment_coords_uv, segment_coords_xy = self._generate_window_mask(r_num, theta_num)
+        segment_coords_uv, segment_coords_xy, segment_masks = self._generate_window_mask(r_num, theta_num)
 
         window_values = [self.unwrap_img[window[:,0],window[:,1]] for window in segment_coords_uv]
-
-        return segment_coords_uv, segment_coords_xy, window_values
+    
+        return segment_coords_uv, segment_coords_xy, segment_masks, window_values
             
-    def _generate_window_mask(self, r_num = 10, theta_num = 10, layer = 5):
+    def _generate_window_mask(self, r_num = 10, theta_num = 10):
         """
         Generate a mask for the disk
 
@@ -62,12 +63,12 @@ class UnwrapWindow():
         r_intervals = np.linspace(0, self.radius, num=r_num + 1)
         theta_intervals = np.linspace(-np.pi, np.pi, num=theta_num + 1) 
 
-        segments = []
+        segment_masks = np.zeros((h,w))
         segment_coords_uv = []
-        segment_coords_xy = []
+        segment_coords_xy = [] ###### should put it into the first for loop 
         for i in range(r_num-1, -1, -1):  ### windows are from the outer layer to the inner layer
             for j in range(theta_num):
-                
+                seg_idx = (r_num - i - 1) * theta_num + j + 1
                 if i != r_num - 1:
                     r_mask = (r >= r_intervals[i]) & (r < r_intervals[i + 1])
                 else:
@@ -79,27 +80,28 @@ class UnwrapWindow():
                     theta_mask = (theta >= theta_intervals[j]) & (theta <= theta_intervals[j + 1])
                     
                 segment = np.logical_and(r_mask, theta_mask)
-               
-                segments.append(segment)
+
+           
+                #segment_masks.append(segment) # disconnected component
                 
              
 
                 uv = np.column_stack(np.where(segment))
-    
+                segment_masks[segment] = seg_idx
                 segment_coords_uv.append(uv)
                 segment_coords_xy.append(self.unwrap_params[uv[:,0], uv[:,1]])
 
-        self.segments = segments
+        #self.segment_masks = segment_masks
         self.segments_coords_uv = segment_coords_uv
         self.segments_coords_xy = segment_coords_xy
 
-        return segment_coords_uv, segment_coords_xy
+        return segment_coords_uv, segment_coords_xy, segment_masks
     
     
-    def plot_window(self,v_out,f_steps_out):
+    def plot_window(self,v_out, f_steps_out, save_dir = None):
         
         plt.figure(figsize=(10, 10))
-        plt.imshow(self.unwrap_img, cmap='gray')
+        plt.imshow(self.unwrap_img, cmap='magma')
 
         v_out_ = (v_out + 1)/2.* self.raster_size + self.border_pad
         plt.triplot(v_out_[:,2], 
@@ -107,25 +109,51 @@ class UnwrapWindow():
                     f_steps_out, 
                     'g-', lw=0.3)
 
-        for segment in self.segments:
-            boundary = np.where(sksegmentation.find_boundaries(segment, mode='inner').astype(np.uint8))
-            plt.scatter(boundary[1],boundary[0], c='r',s=0.1)
+        for segment in self.segment_masks:
+            boundary = np.where(sksegmentation.find_boundaries(segment, mode='thick').astype(np.uint8)) # mode argument change to 'thick'
+            plt.scatter(boundary[1],boundary[0], c='#4C72B0',s=0.1)
         plt.gca().set_aspect('auto')
-        plt.savefig(os.path.join(SAVE_DIR, 'window.png'))
+        if save_dir:
+            plt.savefig(os.path.join(save_dir, 'window.svg'))
         plt.show()
 
-    def get_layer_window(self, layer=5):
+
+
+    def plot_disk_window(self, img = None, save_dir = None):
+        
+        plt.figure(figsize=(10, 10))
+        if img is not None:
+            plt.imshow(img, cmap='magma')
+        else:
+            plt.imshow(self.unwrap_img, cmap='gray')
+
+        # v_out_ = (v_out + 1)/2.* self.raster_size + self.border_pad
+        # plt.triplot(v_out_[:,2], 
+        #             v_out_[:,1],
+        #             f_steps_out, 
+        #             'g-', lw=0.3)
+
+        for segment in self.segment_masks:
+            boundary = np.where(sksegmentation.find_boundaries(segment, mode='thick').astype(np.uint8)) # mode argument change to 'thick'
+            plt.scatter(boundary[1],boundary[0], c='#4C72B0',s=0.1)
+        plt.gca().set_aspect('auto')
+        if save_dir:
+            plt.savefig(os.path.join(save_dir, 'window.svg'),dpi=600)
+        plt.show()
+
+    def get_layer_window(self, layer = 5): 
+        "get several layer of windows not all the windows"
         edge_window_uv = []
         edge_window_xy = []
-        for i in range(layer):
+        for i in range(1, layer + 1):
             layer_s = self.theta_num * (layer - 1)
             layer_e = self.theta_num * layer 
   
-            uv = self.segments_coords_uv[layer_s:layer_e]
+            uv = self.segments_coords_uv[layer_s:layer_e] 
             xy = self.segments_coords_xy[layer_s:layer_e]
-
-            edge_window_uv.append(uv)
-            edge_window_xy.append(xy)
+           
+            edge_window_uv.append(uv) # for the whole layer
+            edge_window_xy.append(xy) # for the whole layer
 
         return edge_window_uv, edge_window_xy
         

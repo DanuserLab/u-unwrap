@@ -1,7 +1,7 @@
 THETA_NUM = 60     ### a parameter for split the disk angle
 R_NUM = 30          ### a parameter for split the disk radius
 RASTER_SIZE = 256   ### a parameter for visualization; doesn't have specific meaning
-BORDER_PAD = 26     ### a parameter for visualization; doesn't have specific meaning
+BORDER_PAD = 32     ### a parameter for visualization; doesn't have specific meaning
 
 import numpy as np
 
@@ -10,19 +10,39 @@ import unwrap3D.Segmentation.segmentation as unwrap3D_segmentation
 import unwrap3D.Image_Functions.image as unwrap3D_image_fn
 
 
+
+
 import calculate_d as cal_d_fns
 import classify_window_d 
-from split_window2D import UnwrapWindow
+
 import sys
-sys.path.append('./unwrap2D')
+sys.path.append('/work/bioinformatics/s440708/python-applications/Unwrap2D/unwrap2D')
+#import code.src.unwrap2D_window.unwrap2D_sq as unwrap2D_fns
 import unwrap2D as unwrap2D_fns
-
-
+from split_window2D import UnwrapWindow
+#from conformal_map_test import unwrap_2D_test, resample_disk_grid_to_img_grid
+import matplotlib.pyplot as plt
+from copy import deepcopy
 
 """
 Functions to run the stacks
 """
-def unwrap2D_all_TF(raw, masks, contour_method = 'parametric_line_flow_2D'):
+
+
+
+def unwrap2D_all_TF(raw, 
+                    masks, 
+                    boundary_points_stack=None,
+                    conformal_map = False,
+                    use_uniform_area_distort_relax = False,
+                    remesh_initial_conformal = False,
+                    remesh_initial_mesh = True,
+                    contour_method = 'parametric_line_flow_2D',
+                    raster_size = RASTER_SIZE,   ### a parameter for visualization; doesn't have specific meaning
+                    border_pad = BORDER_PAD,
+                    average_edge_length_initial = 2.,
+                    remesh_factor = 1,
+                    max_iteration = 100):
     """
     This function is to unwrap the 2D image for all the frames in the raw image stack.
 
@@ -30,7 +50,7 @@ def unwrap2D_all_TF(raw, masks, contour_method = 'parametric_line_flow_2D'):
 
     """
     
-    assert raw.shape == masks.shape, f"AssertionError: raw.shape ({raw.shape}) != masks.shape ({masks.shape})"
+    assert raw.shape[:2] == masks.shape[:2], f"AssertionError: raw.shape ({raw.shape}) != masks.shape ({masks.shape})"
     import skimage.morphology as skmorph
     import scipy.ndimage as ndimage
     unwrap_img_stack = []
@@ -38,36 +58,51 @@ def unwrap2D_all_TF(raw, masks, contour_method = 'parametric_line_flow_2D'):
     unwrap_mask_stack = []
     contour_evolve_stack = []
     v_out_stack = []
+    v_img_out_stack = []
     f_steps_out_stack = []
     bdy_index_stack = []
     for frame in range(raw.shape[0]):
-
+        # mask_frame = masks[frame]
         mask_frame = masks[frame] > 0
         mask_frame = skmorph.binary_closing(mask_frame, skmorph.disk(1))
         mask_frame = ndimage.binary_fill_holes(mask_frame)
-
-        v_out, f_steps_out, v_img_out, bdy_index = unwrap2D_fns.unwrap_2D(raw[frame], 
-                                                            mask_frame, 
-                                                            relax_tol=1.0e-5,
-                                                            relax_niters=25,
-                                                            relax_omega=1.,
-                                                            debugviz_tri_areadistort = False,
-                                                            areadistort_max_iter = 100,
-                                                            areadistort_delta_h_bound = 0.5,
-                                                            areadistort_stepsize=0.1,
-                                                            area_distort_flip_tri=True)
+      
+        # if boundary_points_stack is not None:
+        #     boundary_points = boundary_points_stack[frame]
+        # else:
+        #     boundary_points = None
         
 
+        v_out, f_steps_out, v_img_out, bdy_index = unwrap2D_fns.unwrap_2D(raw[frame], 
+                                                                        mask_frame, 
+                                                                        conformal_map = conformal_map, 
+                                                                        debugviz_tri_areadistort = False,
+                                                                        areadistort_max_iter = max_iteration,
+                                                                        areadistort_delta_h_bound = 0.5,
+                                                                        areadistort_stepsize=0.1,
+                                                                        remesh_initial_mesh = remesh_initial_mesh,
+                                                                        use_uniform_area_distort_relax=use_uniform_area_distort_relax,
+                                                                        remesh_initial_conformal=remesh_initial_conformal,
+                                                                        average_edge_len_factor_initial=average_edge_length_initial,
+                                                                        average_edge_len_factor=remesh_factor,
+                                                                        area_distort_flip_tri=True,
+                                                                        robust_L=True,
+                                                                        eps=1)
+
+
+        
         unwrap_params, unwrap_img, unwrap_mask = unwrap2D_fns.resample_disk_grid_to_img_grid(v_out[:,1:], 
                                                                     v_img_out[:,1:], # use only the last two coordinates.
                                                                     f_steps_out, 
                                                                     raw[frame],
-                                                                    raster_size=RASTER_SIZE, border_pad=BORDER_PAD) # raster_size is the diameter of the disk, border_pad=black area.
+                                                                    raster_size=raster_size, border_pad=border_pad) # raster_size is the diameter of the disk, border_pad=black area.
     
 
-    
+      
+
 
         contour = v_img_out[bdy_index][:,1:]
+        
         contour_evolve = create_contour_evolve(contour, mask_frame, contour_method)
         
         unwrap_img_stack.append(unwrap_img)
@@ -75,9 +110,11 @@ def unwrap2D_all_TF(raw, masks, contour_method = 'parametric_line_flow_2D'):
         unwrap_mask_stack.append(unwrap_mask)
         contour_evolve_stack.append(contour_evolve)
         v_out_stack.append(v_out)
+        v_img_out_stack.append(v_img_out)
         f_steps_out_stack.append(f_steps_out)
         bdy_index_stack.append(bdy_index)
-    return unwrap_img_stack, unwrap_params_stack, unwrap_mask_stack, contour_evolve_stack, v_out_stack, f_steps_out_stack, bdy_index_stack
+    return unwrap_img_stack, unwrap_params_stack, unwrap_mask_stack, contour_evolve_stack, v_out_stack,\
+           v_img_out_stack, f_steps_out_stack, bdy_index_stack
 
 
 def create_contour_evolve(contour, mask, method = 'parametric_line_flow_2D'):
@@ -92,8 +129,8 @@ def create_contour_evolve(contour, mask, method = 'parametric_line_flow_2D'):
                                                         E=None, 
                                                         close_contour=True, 
                                                         fixed_boundary = False, 
-                                                        lambda_flow=100, # adjusts the balance.  (decrease this to be more similar to original cell shape ), increase to be more like version 1
-                                                        step_size=1, # adjusts the spacing between curves. 
+                                                        lambda_flow= 5, # adjusts the balance.  (decrease this to be more similar to original cell shape ), increase to be more like version 1
+                                                        step_size= 0.05, # adjusts the spacing between curves. 
                                                         niters=50, 
                                                         conformalize=False,
                                                         eps=1e-12)
@@ -114,38 +151,42 @@ def create_contour_evolve(contour, mask, method = 'parametric_line_flow_2D'):
 Functions to split the window stacks
 
 """
-def window_all_TF(unwrap_img_stack, unwrap_params_stack):
+def window_all_TF(unwrap_img_stack, unwrap_params_stack, raster_size = 256, border_pad = 32):
     window_stack = []
     for unwrap_img, unwrap_params in zip(unwrap_img_stack, unwrap_params_stack):
         windows = UnwrapWindow(unwrap_img, 
                         unwrap_params, 
-                        raster_size=RASTER_SIZE, 
-                        border_pad=BORDER_PAD)
+                        raster_size=raster_size, 
+                        border_pad=border_pad)
         
         window_stack.append(windows)
     return window_stack
+
 
 """
 Functions to Calculate the intensity in each window 
 
 """
 def calculate_window_intensity(window_stack, 
-                                r_num = R_NUM,
-                                theta_num = THETA_NUM,
-                                layer_n = 5):
+                               r_num = R_NUM,
+                               theta_num = THETA_NUM,
+                               layer_n = 5):
     window_intensity_stack = []
-    edge_xy_stack= []
+    edge_xy_stack = []
+    edge_uv_stack = [] 
     for window in window_stack:
-        segment_uv, segment_xy, window_values = window.split_window(r_num = R_NUM, 
-                                                                    theta_num = THETA_NUM)
+        segment_uv, segment_xy, segment_masks, window_values = window.split_window(r_num = r_num, 
+                                                                    theta_num = theta_num)
         #_, edge_xy = window.get_layer_window(layer = -1)
         
-        _, edge_xy = window.get_layer_window(layer = layer_n)
+        edge_uv, edge_xy = window.get_layer_window(layer = layer_n) # get all the first several layers # layer_n means I have 3 layers 
         window_intensity_stack.append(window_values)
+        
         edge_xy_stack.append(edge_xy)
+        edge_uv_stack.append(edge_uv)
         
         
-    return window_intensity_stack, edge_xy_stack
+    return window_intensity_stack, edge_xy_stack, edge_uv_stack
 
 """
 Functions to calculate d in each window
@@ -153,14 +194,14 @@ Functions to calculate d in each window
 """
 
 def init_xy_window(edge_xy):
-        """
-        Initialize the xy_window dictionary
-        """
-        xy_windows = {}
-        for i, window in enumerate(edge_xy[0]):
-            for xy in window:
-                xy_windows[tuple(xy)] = i
-        return xy_windows
+    """
+    Initialize the xy_window dictionary
+    """
+    xy_windows = {}
+    for i, window in enumerate(edge_xy[0]):
+        for xy in window:
+            xy_windows[tuple(xy)] = i
+    return xy_windows
 
 def find_closest_point(edge_xy, contour):
     """

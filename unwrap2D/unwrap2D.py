@@ -720,6 +720,9 @@ def binary_to_mesh(mask, keep_largest=True):
 # Master function for unwrapping given 2D image and binary mask
 def unwrap_2D(img, 
               mask, 
+              bnd_uv=None,
+              reordered_igl_boundary_fr=None, 
+              mesh_2D_submesh = None,
               conformal_map=False, 
               debugviz_tri_areadistort = False,
               areadistort_max_iter = 100,
@@ -758,23 +761,44 @@ def unwrap_2D(img,
     # mesh_2D = unwrap3D_meshtools.create_mesh(grid_pts[:,:], grid_tri[face_keep_index][:,::-1])
     # mesh_2D_comps = mesh_2D.split(only_watertight=False)
     # mesh_2D_submesh = mesh_2D_comps[np.argmax([len(ccc.vertices) for ccc in mesh_2D_comps])]
+    if mesh_2D_submesh is None:
+        mesh_2D_submesh = binary_to_mesh(mask>0, keep_largest=True)
+
+    v = mesh_2D_submesh.vertices
+    f = mesh_2D_submesh.faces
+
+
+    if bnd_uv is not None:
+        #bdy_index = np.array([int(np.where(np.all(v[:,1:] == point,axis=1))[0][0]) for point in reordered_igl_boundary_fr])
+        coord_to_idx = {tuple(p): i for i, p in enumerate(v[:, 1:])}
+        bdy_index = np.array([coord_to_idx[tuple(p)] for p in reordered_igl_boundary_fr], dtype=int)
+    else:
+        bdy_index = igl.boundary_loop(f)
     
-    mesh_2D_submesh = binary_to_mesh(mask>0, keep_largest=True)
-    
-    if remesh_initial_mesh:
-        mesh_2D_submesh = unwrap3D_meshtools.incremental_isotropic_remesh(mesh_2D_submesh, 
-                                                                           target_edge_length=average_edge_len_factor_initial*igl.avg_edge_length(mesh_2D_submesh.vertices, mesh_2D_submesh.faces),
-                                                                           n_iters=5)
+    corner = calculate_corner(v, f)
+    disk_coords = unwrap3D_meshtools.rectangular_conformal_map(v,f,
+                              corner=corner, 
+                              bnd_uv=bnd_uv, 
+                              bdy_index=bdy_index,
+                              map2square=False, 
+                              random_state=0, 
+                              return_bdy_index=False)
+    mesh_ref = unwrap3D_meshtools.create_mesh(np.hstack([np.zeros(len(disk_coords))[:,None], 
+                                                            disk_coords]), f)                         
+    # if remesh_initial_mesh:
+    #     mesh_2D_submesh = unwrap3D_meshtools.incremental_isotropic_remesh(mesh_ref, 
+    #                                                                        target_edge_length=average_edge_len_factor_initial*igl.avg_edge_length(mesh_ref.vertices, mesh_ref.faces),
+    #                                                                        n_iters=5)
     
     # 2. harmonic (conformal) mapping to the 2D disk 
     # disk_coords = rectangular_conformal_map(mesh_2D_submesh.vertices,
     #                                         mesh_2D_submesh.faces[:,:],
     #                                         corner=None,  
     #                                         random_state=0)
-    disk_coords = unwrap3D_meshtools.rectangular_conformal_map(mesh_2D_submesh.vertices,
-                                                               mesh_2D_submesh.faces[:,:],
-                                                               corner=None,  
-                                                               random_state=None) # don't do random!. 
+    # disk_coords = unwrap3D_meshtools.rectangular_conformal_map(v,
+    #                                                            f,
+    #                                                            corner=corner,  
+    #                                                            random_state=None) # don't do random!. 
     
     # 3. resample the harmonic (conformal) mapping to the 2D disk to get better mesh quality 
     # disk_coords_mesh = unwrap3D_meshtools.create_mesh(disk_coords, mesh_2D_submesh.faces)
@@ -790,8 +814,8 @@ def unwrap_2D(img,
     # if conformal_map == False:
     
     # 4. Match and compute the corresponding real image coordinates that this resampled disk matches to!. 
-    mesh_ref = unwrap3D_meshtools.create_mesh(np.hstack([np.zeros(len(disk_coords))[:,None], 
-                                                            disk_coords]), mesh_2D_submesh.faces)
+    # mesh_ref = unwrap3D_meshtools.create_mesh(np.hstack([np.zeros(len(disk_coords))[:,None], 
+    #                                                         disk_coords]), mesh_2D_submesh.faces)
     
     if remesh_initial_conformal:
         average_edge_length = average_edge_len_factor*igl.avg_edge_length(mesh_ref.vertices, mesh_ref.faces)
@@ -888,16 +912,51 @@ def unwrap_2D(img,
             if return_steps:
                 return v_out, f_steps_out, mesh_2D_submesh.vertices, (v_steps, f_steps, area_distortion_iter, min_distort_id)
             else:
-                return v_out, f_steps_out, mesh_2D_submesh.vertices
+                return v_out, f_steps_out, mesh_2D_submesh.vertices, bdy_index
             
         else:
             v_out = v_steps[0].copy()
             f_steps_out = f_steps[0].copy()
         
         # 7. Build the circular image 
-            return v_out, f_steps_out, mesh_2D_submesh.vertices
+            return v_out, f_steps_out, mesh_2D_submesh.vertices, bdy_index
     else:
         # for consistency of api 
         disk_coords = np.hstack([np.zeros(len(disk_coords))[:,None], disk_coords]).reshape(-1,3)
-        return disk_coords, mesh_2D_submesh.faces, mesh_2D_submesh.vertices
+        return disk_coords, mesh_2D_submesh.faces, mesh_2D_submesh.vertices, bdy_index
 
+
+
+
+"""
+helper function for boundary-tracked uv input
+
+"""
+
+def calculate_corner(vertices, f):
+    """
+    This function calculates the corner boundary vertices to prevent frame shifting across different frames. 
+    The four corners correspond to the vertices at 0, 90, 180, and -90 degrees relative to the cell's centroid.
+    These corner points can then be used as input to the 'rectangular_conformal_map' function.
+    
+    """
+    import igl
+    import numpy as np
+
+    bdy_index = igl.boundary_loop(f)
+    
+    xy_coord = vertices[:,1:]
+    centroid = np.mean(xy_coord, axis=0)
+ 
+    vertices = vertices[bdy_index]
+    angles = np.arctan2(vertices[:,2] - centroid[1], vertices[:, 1] - centroid[0])
+
+    target_angles = np.array([0, np.pi/2, np.pi, -np.pi/2])
+
+    closest_vertices_index = []
+
+    for target in target_angles:
+        closest_index = np.argmin(np.abs(angles - target))
+        closest_vertices_index.append(bdy_index[closest_index])
+     
+    return closest_vertices_index
