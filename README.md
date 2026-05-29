@@ -30,13 +30,13 @@
 u-Unwrap2D is a Python library built on top of u-Unwrap3D to enable mapping of 2D contours and 2D shapes into canonical representations for registration and windowing to facilitate downstream analysis with particular attention to single cell biology.
 
 The **disk parameterization** of u-Unwrap2D or u-Unwrap is described in the following manuscript, particularly with respect to spatiotemporal analysis of single cell morphodynamics:
-[**Mapping Cell Morphology to a Standard Coordinate System for Analyzing Dynamic Cell Signaling**](https://openreview.net/pdf?id=jUmTewPzII), *Imageomics NeurIPS Workshop*, 2025, written by Shiqiu Yu, [Gaudenz Danuser](https://www.danuserlab-utsw.org/), Felix Y. Zhou.
+[**Mapping Cell Morphology to a Standard Coordinate System for Analyzing Dynamic Cell Signaling**](https://openreview.net/pdf?id=jUmTewPzII), *Imageomics NeurIPS Workshop*, 2025, written by Shiqiu Yu, Gaudenz Danuser, Felix Y. Zhou.
 
 The **contour-guided spatial windowing** is briefly described in the following manuscript, and used to compare edge-based molecular signaling patterns across experimental conditions:
-[**Caveolin-1 regulates context-dependent signaling and survival in Ewing sarcoma**](https://www.biorxiv.org/content/10.1101/2024.09.23.614468v4), *bioRxiv*, 2025, written by Dagan Segal, Xiaoyu Wang, Hanieh Mazloom-Farisbaf, Felix Y. Zhou, Divya Rajendran, Erin Butler, Bingying Chen, Bo-Jui Chang, Khushi Ahuja, Averi Perny, Kushal Bhatt, Dana Kim Reed, Diego H. Castrillon, Jeon Lee, Elise Jeffery, Lei Wang, Khai Nguyen, Noelle S. Williams, Stephen X. Skapek, Satwik Rajaram, Reto Fiolka, Khuloud Jaqaman, Gary Hon, James F. Amatruda, [Gaudenz Danuser](https://www.danuserlab-utsw.org/).
+[**Caveolin-1 regulates context-dependent signaling and survival in Ewing sarcoma**](https://www.biorxiv.org/content/10.1101/2024.09.23.614468v4), *bioRxiv*, 2025, written by Dagan Segal, Xiaoyu Wang, Hanieh Mazloom-Farisbaf, Felix Y. Zhou, Divya Rajendran, Erin Butler, Bingying Chen, Bo-Jui Chang, Khushi Ahuja, Averi Perny, Kushal Bhatt, Dana Kim Reed, Diego H. Castrillon, Jeon Lee, Elise Jeffery, Lei Wang, Khai Nguyen, Noelle S. Williams, Stephen X. Skapek, Satwik Rajaram, Reto Fiolka, Khuloud Jaqaman, Gary Hon, James F. Amatruda, Gaudenz Danuser.
 
 The functions in this library on built on the idealogy of u-Unwrap3D for 2D. For more information please read:
-[**Surface-guided computing to quantify dynamic interactions between cell morphology and molecular signals in 3D**](https://doi.org/10.1101/2023.04.12.536640), *bioRxiv*, 2025, written by Felix Y. Zhou, Virangika K. Wimalasena, Qiongjing Zou, Andrew Weems, Gabriel M. Gihana, Edward Jenkins, Bingying Chen, Bo-Jui Chang, Meghan K. Driscoll, Andrew J. Ewald and [Gaudenz Danuser](https://www.danuserlab-utsw.org/).
+[**Surface-guided computing to quantify dynamic interactions between cell morphology and molecular signals in 3D**](https://doi.org/10.1101/2023.04.12.536640), *bioRxiv*, 2025, written by Felix Y. Zhou, Virangika K. Wimalasena, Qiongjing Zou, Andrew Weems, Gabriel M. Gihana, Edward Jenkins, Bingying Chen, Bo-Jui Chang, Meghan K. Driscoll, Andrew J. Ewald and Gaudenz Danuser.
 
 
 ## Library Features
@@ -89,6 +89,4 @@ Felix Zhou (felixzhou1@gmail.com)
 Shiqiu Yu (Shiqiu.Yu2@UTSouthwestern.edu)
 
 ## Danuser Lab Links
-[Danuser Lab Website](https://www.danuserlab-utsw.org/)
-
 [Software Links](https://github.com/DanuserLab/)
